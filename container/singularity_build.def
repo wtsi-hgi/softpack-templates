@@ -1,0 +1,66 @@
+Bootstrap: docker
+From: {{ build.image }}
+Stage: build
+
+%setup
+  mkdir $SINGULARITY_ROOTFS/opt/softpack/gpg
+  mkdir $SINGULARITY_ROOTFS/opt/spack-cache
+
+%post
+{% block build_stage %}
+{% if os_packages_build.list %}
+  # Update, install and cleanup of system packages needed at build-time
+  {% if os_package_update %}
+  {{ os_packages_build.update }}
+  {% endif %}
+  {{ os_packages_build.install }} {{ os_packages_build.list | join | replace('\n', ' ') }}
+  {{ os_packages_build.clean }}
+
+{% endif %}
+  # Create the manifest file for the installation in /opt/spack-environment
+  mkdir {{ paths.environment }} && cd {{ paths.environment }}
+  cat << EOF > spack.yaml
+{{ manifest }}
+EOF
+
+  # clone the custom spack repo
+  git clone https://github.com/wtsi-hgi/spack-repo.git /opt/spack-repo
+
+  # Install all the required software
+  . /opt/spack/share/spack/setup-env.sh
+  export SPACK_GNUPGHOME=/opt/softpack/gpg
+
+  spack mirror add local-cache /opt/spack-cache
+  spack -e . concretize
+{% if depfile %}
+  spack -e . env depfile -o Makefile
+  make -j $(nproc)
+{% else %}
+  spack -e . install
+{% endif %}
+  spack gc -y
+  spack env activate --sh -d . >> {{ paths.environment }}/environment_modifications.sh
+{% if strip %}
+
+  # Strip the binaries to reduce the size of the image
+  find -L {{ paths.view }}/* -type f -exec readlink -f '{}' \; | \
+    xargs file -i | \
+    grep 'charset=binary' | \
+    grep 'x-executable\|x-archive\|x-sharedlib' | \
+    awk -F: '{print $1}' | xargs strip -s
+{% endif %}
+{% if extra_instructions.build %}
+{{ extra_instructions.build }}
+{% endif %}
+{% endblock build_stage %}
+{% if apps %}
+{% for application, help_text in apps.items() %}
+
+%apprun {{ application }}
+    exec /opt/view/bin/{{ application }} "$@"
+
+%apphelp {{ application }}
+    {{help_text }}
+{% endfor %}
+{% endif %}
+
