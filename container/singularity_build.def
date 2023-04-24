@@ -3,8 +3,8 @@ From: {{ build.image }}
 Stage: build
 
 %setup
-  mkdir $SINGULARITY_ROOTFS/opt/softpack/gpg
-  mkdir $SINGULARITY_ROOTFS/opt/spack-cache
+  mkdir -p $SINGULARITY_ROOTFS/opt/softpack/gpg
+  mkdir -p $SINGULARITY_ROOTFS/opt/spack-cache
 
 %post
 {% block build_stage %}
