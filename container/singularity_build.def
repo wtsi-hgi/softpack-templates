@@ -31,7 +31,7 @@ EOF
   export SPACK_GNUPGHOME=/opt/softpack/gpg
 
   spack repo add /opt/spack-repo
-  spack mirror add local-cache /opt/spack-cache
+  spack mirror add $(hostname) /opt/spack-cache
   spack -e . concretize
 {% if depfile %}
   spack -e . env depfile -o Makefile
