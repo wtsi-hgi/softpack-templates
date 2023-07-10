@@ -1,0 +1,11 @@
+bind_args() {
+    bind_paths() {
+        ARGS=($*)
+        TEMPDIR=${ARGS[0]}
+        DIRS=(/run /tmp ${ARGS[@]:1})
+        mkdir --parents --mode 700 ${DIRS[@]/#/${TEMPDIR}}
+        BIND_PATHS=($(for dir in ${DIRS[@]}; do echo $TEMPDIR$dir:$dir; done))
+        echo $(IFS=, ; echo "${BIND_PATHS[*]}")
+    }
+    echo --bind=$(bind_paths $*),/lustre,/nfs,/software
+}

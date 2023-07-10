@@ -1,0 +1,140 @@
+#%Module
+
+module load /software/modules/ISG/singularity/3.10.0
+
+proc ModulesHelp { } {
+   puts stderr "description: {{ description }}"
+   puts stderr "build:"
+   puts stderr "  id: {{ build.id }}"
+   puts stderr "  image: {{ build.image }}"
+   puts stderr "  created: {{ build.created }}"
+   puts stderr "  updated: {{ build.updated }}"
+   puts stderr "packages:"
+   {% for package in packages -%}
+   puts stderr "  - {{ package -}}"
+   {% endfor %}
+}
+
+module-whatis "{{ description }}"
+
+setenv SINGULARITY_CACHEDIR "{{ cache_dir }}"
+
+set-function python {
+    {% include 'bindargs' %}
+    singularity exec $(bind_args $(mktemp --directory)) {{ build.image }} /opt/view/bin/python3 $*
+}
+
+set-function R {
+    {% include 'bindargs' %}
+    singularity exec $(bind_args $(mktemp --directory)) {{ build.image }} /opt/view/bin/R $*
+}
+
+set-function Rscript {
+    {% include 'bindargs' %}
+    singularity exec $(bind_args $(mktemp --directory)) {{ build.image }} /opt/view/bin/Rscript $*
+}
+
+set-function rstudio {
+
+__rstudio_start()  {
+
+    ARGS=("$@")
+    RSESSION_LOG=${ARGS[0]}
+    BSUB_CONFIG="${ARGS[1]}"
+    SINGULARITY_ARGS="${ARGS[2]}"
+    RSESSION_OPTIONS="${ARGS[3]}"
+
+    [ -e ${RSESSION_LOG} ] && rm -- ${RSESSION_LOG}
+    touch ${RSESSION_LOG}
+
+    echo -e "LSF job options:\n" > ${RSESSION_LOG}
+    cat $BSUB_CONFIG >> ${RSESSION_LOG}
+    echo -en "\n" >> ${RSESSION_LOG}
+
+    rserver_run() {
+
+        {% include 'bindargs' %}
+
+        TEMPDIR=$(mktemp --directory)
+        RSTUDIO_CONF=${TEMPDIR}/var/lib/rstudio-server/conf
+        mkdir --parents --mode 700 ${RSTUDIO_CONF}
+
+        SINGULARITY_ARGS=(
+            $SINGULARITY_ARGS
+            $(bind_args $TEMPDIR $(dirname ${RSTUDIO_CONF#$TEMPDIR}))
+        )
+
+        PORT=$(/software/hgi/softpack/.venv/bin/python3 -c "{% include 'getport.py' %}")
+
+        RSERVER=/usr/local/bin/rserver
+        RSERVER_CONF=${RSTUDIO_CONF}/rserver.conf
+        RSESSION_CONF=${RSTUDIO_CONF}/rsession.conf
+
+        export SINGULARITYENV_USER=$(id -un)
+        export SINGULARITYENV_PASSWORD=$(openssl rand -base64 15)
+
+        cat > $RSERVER_CONF <<EOF
+        # RStudio Server Configuration File
+        www-port=${PORT}
+        server-user=${SINGULARITYENV_USER}
+        auth-none=0
+        auth-timeout-minutes=0
+        auth-stay-signed-in-days=30
+        auth-pam-helper-path=/usr/lib/rstudio-server/bin/pam-helper
+        rsession-which-r=/opt/view/bin/R
+EOF
+
+        cat > $RSESSION_CONF <<EOF
+        # R Session Configuration File
+        ${RSESSION_OPTIONS[*]}
+EOF
+
+        RSERVER_ARGS=(
+            --config-file=${RSERVER_CONF#$TEMPDIR}
+            --rsession-config-file=${RSESSION_CONF#$TEMPDIR}
+        )
+
+        echo -e "To access the server, open one of these URLs in a browser and login with the credentials below:\n" >> ${RSESSION_LOG}
+        echo -e "\thttp://$(hostname --fqdn):$PORT" >> ${RSESSION_LOG}
+        echo -e "\thttp://$(hostname --ip-address):$PORT\n" >> ${RSESSION_LOG}
+        echo -e "\tusername: $SINGULARITYENV_USER" >> ${RSESSION_LOG}
+        echo -e "\tpassword: $SINGULARITYENV_PASSWORD\n" >> ${RSESSION_LOG}
+
+        singularity exec ${SINGULARITY_ARGS[*]} {{ build.image }} ${RSERVER} ${RSERVER_ARGS[*]} >> ${RSESSION_LOG}
+    }
+    export RSESSION_LOG
+    export SINGULARITY_ARGS
+    export RSESSION_OPTIONS
+    export -f rserver_run
+
+    bsub -yaml $BSUB_CONFIG rserver_run >> ${RSESSION_LOG}
+    BSUB_STATUS=$?
+    rm -f $BSUB_CONFIG
+    if [ $BSUB_STATUS -ne 0 ]; then
+        exit $BSUB_STATUS
+    else
+        echo -e "\nWaiting for RStudio server to start ...\n" >> ${RSESSION_LOG}
+        tail -n 20 -f ${RSESSION_LOG} | sed '/^\s*password:\s.*$/ q'
+        echo -en "\n"
+    fi
+}
+export -f __rstudio_start
+
+__rstudio_stop()  {
+    bkill -J "$1"
+}
+export -f __rstudio_stop
+
+__rstudio_list()  {
+    bjobs -w -J "$1"
+}
+export -f __rstudio_list
+
+__rstudio_command()  {
+/software/hgi/softpack/.venv/bin/python3 -u - $@ << EOF
+{% include 'rstudio.py' %}
+EOF
+}
+
+__rstudio_command $@
+}

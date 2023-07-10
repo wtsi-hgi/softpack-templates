@@ -1,0 +1,33 @@
+# Copyright 2013-2023 Lawrence Livermore National Security, LLC and other
+# Spack Project Developers. See the top-level COPYRIGHT file for details.
+#
+# SPDX-License-Identifier: (Apache-2.0 OR MIT)
+
+from spack.package import *
+
+
+class {{ class_name }}({{ base_class_name }}):
+    """{{ title }}
+    
+    {{ description }}
+    """
+
+    homepage = "{{ homepage }}"
+    {% if git %}
+    git = "{{ git }}"
+    {%- elif cran %}
+    cran = "{{ cran }}"
+    {%- elif url %}
+    url = "{{ url }}"
+    {% endif %}
+
+    # versions
+    {% for version, spec in versions.items() -%}
+    version("{{ version }}", {{ spec.items()|map("join", "=")|join(", ")}})
+    {% endfor %}
+
+    # dependencies
+    {% for spec, dependency in dependencies.items() -%}
+    depends_on("{{ spec }}", {{ dependency.items()|map("join", "=")|join(", ")}})
+    {% endfor %}
+
