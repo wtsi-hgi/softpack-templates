@@ -1,0 +1,20 @@
+#%Module
+
+module load /software/modules/ISG/singularity/3.10.0
+
+proc ModulesHelp { } {
+   puts stderr "description: {{ description }}"
+   puts stderr "packages:"
+   {% for package in packages -%}
+   puts stderr "  - {{ package -}}"
+   {% endfor %}
+}
+
+module-whatis "{{ description }}"
+
+setenv SINGULARITY_IMAGE "{{ build.image }}"
+
+set-function python {
+    {% include 'bindargs' %}
+    singularity exec $(bind_args $(mktemp --directory)) ${SINGULARITY_IMAGE} /opt/view/bin/python3 $*
+}
